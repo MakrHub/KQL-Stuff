@@ -1,0 +1,122 @@
+let Timespan = ago(30d);
+let TimeWindow = 15m;
+let AgSignIns = 
+SigninLogs
+| where TimeGenerated >= Timespan
+| where ResultType == "0"
+| where UserPrincipalName !contains "xperadmin"
+| extend City = tostring(LocationDetails.city)
+| extend State = tostring(LocationDetails.state)
+| extend Country = tostring(LocationDetails.countryOrRegion)
+| extend NamedNetwork = tostring(parse_json(tostring(parse_json(NetworkLocationDetails)[0].networkNames))[0])
+| extend DevName = iif( isempty(tostring(DeviceDetail.displayName))
+                        , "Non-recognized Device"
+                        , tostring(DeviceDetail.displayName))
+| summarize IPs = make_set(IPAddress), Cities = make_set(City), States = make_set(State), Countries = make_set(Country), DevNames = make_list(DevName,maxSize = 3), NamedNets = make_list(NamedNetwork,maxSize = 3) by Times = bin(TimeGenerated, TimeWindow), UserPrincipalName
+| extend IPCount = array_length(IPs)
+| extend CityCount = array_length(Cities)
+| extend StateCount = array_length(States)
+| extend DevCount = array_length(DevNames)
+| extend NetCount = array_length(NamedNets)
+| where IPCount > 1
+    and CityCount > 1
+    and StateCount > 1
+| where DevNames has "Non-recognized Device"
+//| where tostring(IPs[0]) != tostring(IPs[1])
+| sort by UserPrincipalName
+;
+AgSignIns
+
+
+
+SigninLogs
+| where TimeGenerated >= ago(30d)
+| project-reorder TimeGenerated, UserPrincipalName, RiskDetail, RiskEventTypes, RiskState, RiskLevelDuringSignIn, RiskLevelAggregated
+| where RiskDetail != "none" or RiskEventTypes != "[]" or RiskState != "none" or RiskLevelDuringSignIn != "none" or RiskLevelAggregated != "none"
+//| where RiskState in ("high","medium") or RiskLevelAggregated in ("high","medium")
+| sort by RiskLevelAggregated desc
+
+
+
+BehaviorAnalytics
+| where TimeGenerated >= ago(30d)
+| extend ThreatIntelIndicatorType_ = tostring(DevicesInsights.ThreatIntelIndicatorType)
+| extend ThreatIntelIndicatorDescription_ = tostring(DevicesInsights.ThreatIntelIndicatorDescription)
+| where ThreatIntelIndicatorDescription_ != "" or ThreatIntelIndicatorType_ != ""
+//| where ActivityType == "LogOn"
+| project-reorder TimeGenerated, UserPrincipalName, ActionType, ActivityInsights, SourceDevice, ThreatIntelIndicatorDescription_,ThreatIntelIndicatorType_
+| sort by TimeGenerated desc
+
+
+SigninLogs
+| where TimeGenerated >= ago(7d)
+| where ResultType == "0"
+| extend deviceId_ = tostring(DeviceDetail.deviceId)
+| project-reorder
+    TimeGenerated,
+    UserPrincipalName,
+    RiskDetail,
+    RiskEventTypes,
+    RiskState,
+    RiskLevelDuringSignIn,
+    RiskLevelAggregated,
+    DeviceDetail,
+    IPAddress
+| where RiskState == "atRisk" or RiskLevelDuringSignIn in ("high", "medium")
+    and deviceId_ == ""
+| summarize
+    RiskTimes = make_set(TimeGenerated, maxSize = 8),
+    IPs = make_set(IPAddress, maxSize = 8),
+    Risks = make_set(RiskLevelDuringSignIn, maxSize = 8),
+    RiskEvents = make_set(RiskEventTypes, maxSize = 8),
+    isAtRisk = make_set(RiskState, maxSiz = 8)
+    by UserPrincipalName
+
+
+
+
+
+
+
+
+
+let Timespan = ago(30d);
+let TimeWindow = 5m;
+let AgSignIns = 
+SigninLogs
+| where TimeGenerated >= Timespan
+| where ResultType == "0"
+| where UserPrincipalName !contains "xperadmin"
+| extend City = tostring(LocationDetails.city)
+| extend State = tostring(LocationDetails.state)
+| extend Country = tostring(LocationDetails.countryOrRegion)
+| extend NamedNetwork = tostring(parse_json(tostring(parse_json(NetworkLocationDetails)[0].networkNames))[0])
+| extend DevName = iif( isempty(tostring(DeviceDetail.displayName))
+                        , "Non-recognized Device"
+                        , tostring(DeviceDetail.displayName))
+| summarize IPs = make_set(IPAddress), Cities = make_set(City), States = make_set(State), Countries = make_set(Country), DevNames = make_list(DevName,maxSize = 3), NamedNets = make_list(NamedNetwork,maxSize = 3) by Times = bin(TimeGenerated, TimeWindow), UserPrincipalName
+| extend IPCount = array_length(IPs)
+| extend CityCount = array_length(Cities)
+| extend StateCount = array_length(States)
+| extend DevCount = array_length(DevNames)
+| extend NetCount = array_length(NamedNets)
+| where IPCount > 1
+    and StateCount > 1
+| where DevNames has "Non-recognized Device"
+| sort by UserPrincipalName
+;
+let RiskLogs = 
+SigninLogs
+| where TimeGenerated >= ago(14d)
+| where ResultType == "0"
+| extend deviceId_ = tostring(DeviceDetail.deviceId)
+| project-reorder TimeGenerated, UserPrincipalName, RiskDetail, RiskEventTypes, RiskState, RiskLevelDuringSignIn, RiskLevelAggregated, DeviceDetail, IPAddress
+| where RiskState == "atRisk" or RiskLevelDuringSignIn in ("high","medium")
+    and deviceId_ == ""
+| summarize IPs = make_set(IPAddress,maxSize=8), Risks = make_set(RiskLevelDuringSignIn,maxSize=8), RiskEvents = make_set(RiskEventTypes, maxSize = 8), RiskTimes = make_set(TimeGenerated,maxSize = 8) by UserPrincipalName
+;
+SigninLogs
+| where TimeGenerated >= ago(14d)
+| where UserPrincipalName in (RiskLogs) and UserPrincipalName in (AgSignIns)
+
+

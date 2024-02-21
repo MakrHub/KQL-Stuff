@@ -1,0 +1,78 @@
+let AgSignIns = 
+SigninLogs
+| summarize by Times = bin(TimeGenerated, 1hr), IPAddress, UserPrincipalName
+| sort by Times desc 
+| join kind = inner ( 
+SigninLogs
+    | summarize by Times = bin(TimeGenerated, 1hr), IPAddress, UserPrincipalName
+    | sort by Times desc
+) on UserPrincipalName
+;
+AgSignIns
+
+
+
+
+let AgSignIns = 
+SigninLogs
+| where TimeGenerated >= ago(14d)
+| where UserPrincipalName == "ssadler@portnerandshure.com"
+| summarize IPs = make_list(IPAddress) by Times = bin(TimeGenerated, 1hr), UserPrincipalName
+| extend IPCount = array_length(IPs)
+| where IPCount > 1
+| where IPs[0] != IPs[1]
+| sort by Times desc
+;
+AgSignIns
+
+
+
+let AgSignIns = 
+SigninLogs
+| where TimeGenerated >= ago(14d)
+| where UserPrincipalName == "ssadler@portnerandshure.com"
+| extend City = tostring(LocationDetails.city)
+| extend State = tostring(LocationDetails.state)
+| summarize IPs = make_set(IPAddress), Cities = make_set(City), States = make_set(State) by Times = bin(TimeGenerated, 1hr), UserPrincipalName
+| extend IPCount = array_length(IPs)
+| extend CityCount = array_length(Cities)
+| extend StateCount = array_length(States)
+| where IPCount > 1
+    and CityCount > 1
+    and StateCount > 1
+| where tostring(IPs[0]) != tostring(IPs[1])
+| sort by Times desc
+;
+AgSignIns
+
+
+let Timespan = ago(14d);
+let TimeWindow = 15m;
+let AgSignIns = 
+SigninLogs
+| where TimeGenerated >= Timespan
+| where ResultType == "0"
+//| where UserPrincipalName == "ssadler@portnerandshure.com"
+| extend City = tostring(LocationDetails.city)
+| extend State = tostring(LocationDetails.state)
+| summarize IPs = make_set(IPAddress), Cities = make_set(City), States = make_set(State) by Times = bin(TimeGenerated, TimeWindow), UserPrincipalName
+| extend IPCount = array_length(IPs)
+| extend CityCount = array_length(Cities)
+| extend StateCount = array_length(States)
+| where IPCount > 1
+    and CityCount > 1
+    and StateCount > 1
+//| where tostring(IPs[0]) != tostring(IPs[1])
+| sort by Times desc
+;
+AgSignIns
+
+
+BehaviorAnalytics
+| where TimeGenerated >= ago(14d)
+//| where UserPrincipalName == "ssadler@portnerandshure.com"
+| extend ThreatIntelIndicatorType_ = tostring(DevicesInsights.ThreatIntelIndicatorType)
+| extend ThreatIntelIndicatorDescription_ = tostring(DevicesInsights.ThreatIntelIndicatorDescription)
+| where ThreatIntelIndicatorDescription_ != "" or ThreatIntelIndicatorType_ != ""
+| project-reorder TimeGenerated, UserPrincipalName, ActionType, ActivityType, ActivityInsights, SourceDevice, ThreatIntelIndicatorDescription_,ThreatIntelIndicatorType_
+| sort by TimeGenerated desc

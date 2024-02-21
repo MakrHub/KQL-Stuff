@@ -1,0 +1,57 @@
+AuditLogs
+| extend TargetUser = tostring(TargetResources[0].userPrincipalName)
+| where TargetUser == "UPN"
+    and TimeGenerated >= ago(365d)
+| sort by TimeGenerated desc
+
+
+
+SigninLogs
+| where UserPrincipalName == "UPN"
+| where TimeGenerated >= ago(30d)
+| where ResultType == "0"
+| where IPAddress !in (TRUSTED IPS)
+| project-reorder TimeGenerated, IPAddress, LocationDetails, DeviceDetail, NetworkLocationDetails
+| sort by TimeGenerated
+
+
+SigninLogs
+| where UserPrincipalName == "tneumann@quiddity.com"
+| where TimeGenerated >= ago(30d)
+| where ResultType == "0"
+| extend deviceId_ = tostring(DeviceDetail.deviceId)
+| where deviceId_ !in ("0677a4fa-18a8-4399-bcfb-b95075c46d54","24ab2375-1582-404d-a793-f34ad21b466f")
+| where IPAddress !in ("40.77.1.98","2403:6200:8840:9d:b183:f319:977a:19ea","50.201.98.21")
+| project-reorder TimeGenerated, IPAddress, LocationDetails, DeviceDetail, NetworkLocationDetails
+| sort by TimeGenerated
+
+
+
+let Timespan = ago(30d);
+let TimeWindow = 15m;
+let AgSignIns = 
+SigninLogs
+| where TimeGenerated >= Timespan
+| where ResultType == "0"
+| where UserPrincipalName !contains "servicedesk" and UserPrincipalName !contains "mmellott" and UserPrincipalName !contains "xperautomate"
+| extend City = tostring(LocationDetails.city)
+| extend State = tostring(LocationDetails.state)
+| extend Country = tostring(LocationDetails.countryOrRegion)
+| extend NamedNetwork = tostring(parse_json(tostring(parse_json(NetworkLocationDetails)[0].networkNames))[0])
+| extend DevName = iif( isempty(tostring(DeviceDetail.displayName))
+                        , "Non-recognized Device"
+                        , tostring(DeviceDetail.displayName))
+| summarize IPs = make_set(IPAddress), Cities = make_set(City), States = make_set(State), Countries = make_set(Country), DevNames = make_list(DevName,maxSize = 3), NamedNets = make_list(NamedNetwork,maxSize = 3) by Times = bin(TimeGenerated, TimeWindow), UserPrincipalName
+| extend IPCount = array_length(IPs)
+| extend CityCount = array_length(Cities)
+| extend StateCount = array_length(States)
+| extend DevCount = array_length(DevNames)
+| extend NetCount = array_length(NamedNets)
+| where IPCount > 1
+    and CityCount > 1
+    and StateCount > 1
+| where DevNames has "Non-recognized Device"
+//| where tostring(IPs[0]) != tostring(IPs[1])
+| sort by UserPrincipalName
+;
+AgSignIns

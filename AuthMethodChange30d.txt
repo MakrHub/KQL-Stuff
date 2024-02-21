@@ -1,0 +1,148 @@
+// phone number and email changes
+AuditLogs
+// refine search
+| where Category == "UserManagement"
+| where OperationName == "Update user"
+| where TimeGenerated >= ago(90d)
+// define target and initiator
+| extend targetUser = tostring(TargetResources[0].userPrincipalName)
+| extend initUser = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)
+// make sure it was user genereated activity
+| where initUser != ""
+| where initUser == targetUser
+// define value locations
+| extend newValues = tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].newValue)
+| extend oldValues = tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].oldValue)
+// define values to compare for changes
+| extend newAltPhone = iff(tostring(parse_json(newValues)[0].AlternativePhoneNumber) != "", tostring(parse_json(newValues)[0].AlternativePhoneNumber), " ")
+| extend oldAltPhone = iff(tostring(parse_json(oldValues)[0].AlternativePhoneNumber) != "", tostring(parse_json(oldValues)[0].AlternativePhoneNumber), " ")
+| extend newEmail = iff(tostring(parse_json(newValues)[0].Email) != "", tostring(parse_json(newValues)[0].Email), " ")
+| extend oldEmail = iff(tostring(parse_json(oldValues)[0].Email) != "", tostring(parse_json(oldValues)[0].Email), " ")
+| extend newPhone = iff(tostring(parse_json(newValues)[0].PhoneNumber) != "", tostring(parse_json(newValues)[0].PhoneNumber), " ")
+| extend oldPhone = iff(tostring(parse_json(oldValues)[0].PhoneNumber) != "", tostring(parse_json(oldValues)[0].PhoneNumber), " ")
+| extend newVoicePhone = iff(tostring(parse_json(newValues)[0].VoiceOnlyPhoneNumber) != "", tostring(parse_json(newValues)[0].VoiceOnlyPhoneNumber), " ")
+| extend oldVoicePhone = iff(tostring(parse_json(oldValues)[0].VoiceOnlyPhoneNumber) != "", tostring(parse_json(oldValues)[0].VoiceOnlyPhoneNumber), " ")
+// check for value changes
+| where (newAltPhone != oldAltPhone) or
+        (newEmail != oldEmail) or
+        (newPhone != oldPhone) or
+        (newVoicePhone != oldVoicePhone)
+// assign Change action for Logic App
+| extend Change = case(newAltPhone != oldAltPhone, "Phone Number Changed",
+                       newEmail != oldEmail, "Email Changed",
+                       newPhone != oldPhone, "Phone Number Changed",
+                       newVoicePhone != oldVoicePhone, "Phone Number Changed",
+                       "This log should not exist")
+// include additional columns for logic app
+| extend newNumber = case(newAltPhone != " " and newAltPhone != oldAltPhone, newAltPhone,
+                          newPhone != " " and newPhone != oldPhone, newPhone,
+                          newVoicePhone != " " and newVoicePhone != oldVoicePhone, newVoicePhone,
+                          " ")
+| extend oldNumber = case(oldAltPhone != " " and oldAltPhone != newAltPhone, oldAltPhone,
+                          oldPhone != " " and oldPhone != newPhone, oldPhone,
+                          oldVoicePhone != " " and oldVoicePhone != newVoicePhone, oldVoicePhone,
+                          " ")
+| extend newDevice = " "
+| extend oldDevice = " "
+// show like columns
+| project
+    TimeGenerated,
+    initUser,
+    targetUser,
+    Change,
+    newDevice,
+    oldDevice,
+    newNumber,
+    oldNumber,
+    newEmail,
+    oldEmail
+| sort by TimeGenerated desc
+| union kind=outer (
+// app password changes ############################################################################################################################################################
+AuditLogs
+// refine search
+| where ActivityDisplayName has "application password"
+| where TimeGenerated >= ago(90d)
+// define init and target
+| extend targetUser = tostring(TargetResources[0].userPrincipalName)
+| extend initUser = tostring(parse_json(tostring(InitiatedBy.user)).userPrincipalName)
+// defince change for logic app
+| extend Activity = ActivityDisplayName
+| extend Change = case(Activity == "Create application password for user", "App Password Created",
+                       Activity == "Delete application password for user", "App Password Deleted",
+                       "This log should not exist")
+// include addition columns for logic app
+| extend newDevice = " "
+| extend oldDevice = " "
+| extend newNumber = " "
+| extend oldNumber = " "
+| extend newEmail = " "
+| extend oldEmail = " "
+//show like columns
+| project
+    TimeGenerated,
+    initUser,
+    targetUser,
+    Change,
+    newDevice,
+    oldDevice,
+    newNumber,
+    oldNumber,
+    newEmail,
+    oldEmail
+| sort by TimeGenerated desc
+| union kind=outer (
+// phone app changes ##################################################################################################################################################################
+AuditLogs
+// refine search
+| where Identity == "Azure MFA StrongAuthenticationService"
+| where TimeGenerated >= ago(90d)
+// define target and init(which is the same but these specific logs are initiated by a service principle so I defined them as the same for the sake of consistency)
+| extend targetUser = tostring(TargetResources[0].userPrincipalName)
+| extend initUser = tostring(TargetResources[0].userPrincipalName)
+// Old Device Name
+| extend oldDevice = iff(tostring(parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].oldValue))[0].DeviceName) != "" , tostring(parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].oldValue))[0].DeviceName) , " ")
+// New Device Name
+| extend newDevice = iff(tostring(parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].newValue))[0].DeviceName) != "" , tostring(parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].newValue))[0].DeviceName) , " ")
+// List new Device Tokens for Troubleshooting
+| extend NewTokenLoc = tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].newValue)
+| extend NewToken1 = iff(parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].newValue))[0].DeviceToken != "",
+    parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].newValue))[0].DeviceToken, "")
+| extend NewToken2 = iff(parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].newValue))[1].DeviceToken != "",
+    parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].newValue))[1].DeviceToken, "")
+| extend NewToken3 = iff(parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].newValue))[2].DeviceToken != "",
+    parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].newValue))[2].DeviceToken, "")
+// List old device Tokens for troubleshooting
+| extend OldTokenLoc = tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].oldValue)
+| extend OldToken1 = iff(parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].oldValue))[0].DeviceToken != "",
+    parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].oldValue))[0].DeviceToken, "")
+| extend OldToken2 = iff(parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].oldValue))[1].DeviceToken != "",
+    parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].oldValue))[1].DeviceToken, "")
+| extend OldToken3 = iff(parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].oldValue))[2].DeviceToken != "",
+    parse_json(tostring(parse_json(tostring(TargetResources[0].modifiedProperties))[0].oldValue))[2].DeviceToken, "")
+// define change for logic app
+| extend Change = case( OldToken1 == "", "Phone Added",
+                        NewToken1 == "", "Phone Remove",
+                        "Phone Changed")
+// compare tokens
+| where OldTokenLoc !contains NewToken1 or NewTokenLoc !contains OldToken1
+// include addition columns for logic app
+| extend newNumber = " "
+| extend oldNumber = " "
+| extend newEmail = " "
+| extend oldEmail = " "
+// show like columns
+| project
+    TimeGenerated,
+    initUser,
+    targetUser,
+    Change,
+    newDevice,
+    oldDevice,
+    newNumber,
+    oldNumber,
+    newEmail,
+    oldEmail
+| sort by TimeGenerated desc
+)
+)
